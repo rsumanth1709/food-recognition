@@ -1,0 +1,12 @@
+{
+    "admin": {
+        "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+        "name": "Administrator",
+        "email": "admin@foodtracker.com"
+    },
+    "sumanth": {
+        "password": "dc7c4146ed6b5d327487b0d2d7be6bd92f08eeada039ecc092c8acb35ac26e36",
+        "name": "adminrs",
+        "email": "jvxk@gmail.com"
+    }
+}
