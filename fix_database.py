@@ -165,5 +165,3 @@ with open('src/calorie_database.py', 'w', encoding='utf-8') as f:
 
 print(f"✓ Database file fixed successfully!")
 print(f"✓ Total foods in database: {len(foods)}")
-
-# Made with Bob

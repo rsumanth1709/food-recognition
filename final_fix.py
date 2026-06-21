@@ -36,5 +36,3 @@ if function_end_line > 0:
     print(f"Total foods in database: {len(foods)}")
 else:
     print("Could not find function end")
-
-# Made with Bob

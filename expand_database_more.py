@@ -193,5 +193,3 @@ new_count = len(re.findall(r"'[^']+'\s*:\s*\{", new_content))
 print(f"Updated database now has: {new_count} foods")
 print(f"Added {new_count - current_count} new foods")
 print(f"\n✓ Successfully expanded database to {new_count}+ foods!")
-
-# Made with Bob

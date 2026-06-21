@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # Streamlit Web UI application
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodtracker-ui
+    ports:
+      - "8501:8501"
+    environment:
+      - FLASK_DEBUG=false
+      - DATABASE_PATH=/app/data/foodtracker.db
+      - UPLOAD_FOLDER=/app/uploads
+      - MODEL_PATH=/app/models/food_recognition_final.h5
+    volumes:
+      - foodtracker-data:/app/data
+      - foodtracker-models:/app/models
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  # Flask REST API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodtracker-api
+    command: gunicorn --bind 0.0.0.0:5000 src.api:app --workers 2 --timeout 120
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_DEBUG=false
+      - FLASK_SECRET_KEY=prod-secret-key-change-in-env
+      - DATABASE_PATH=/app/data/foodtracker.db
+      - UPLOAD_FOLDER=/app/uploads
+      - MODEL_PATH=/app/models/food_recognition_final.h5
+      - API_HOST=0.0.0.0
+      - API_PORT=5000
+    volumes:
+      - foodtracker-data:/app/data
+      - foodtracker-models:/app/models
+    restart: unless-stopped
+
+volumes:
+  foodtracker-data:
+  foodtracker-models:

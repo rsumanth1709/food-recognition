@@ -276,6 +276,46 @@ Contributions are welcome! Please:
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+<<<<<<< HEAD
+=======
+## 🚀 Production Deployment
+
+This project is fully structured for production deployment and supports multiple deployment architectures.
+
+### Local Configuration via Environment Variables
+
+Copy `.env.example` to `.env` and fill in your custom values:
+```bash
+cp .env.example .env
+```
+
+### Option A: Docker Compose (Multi-container)
+This is the recommended approach. It spins up both the Streamlit web app (frontend) and Flask API (backend) as separate containers:
+```bash
+docker-compose up --build
+```
+- Streamlit Web UI: http://localhost:8501
+- Flask REST API: http://localhost:5000
+
+The containers mount persistent volumes for SQLite databases (`foodtracker-data`) and trained models (`foodtracker-models`).
+
+### Option B: Platform-as-a-Service (PaaS) e.g. Render / Railway
+Use the provided `render.yaml` infrastructure-as-code blueprint:
+1. Link your GitHub repository to **Render.com**.
+2. Render will automatically pick up `render.yaml` and provision:
+   - Frontend web service (Streamlit)
+   - API web service (Flask API using `gunicorn`)
+   - Persistent SSD storage disk (`foodtracker-storage`) to safely preserve sqlite database across restarts.
+
+### Option C: Streamlit Community Cloud (Frontend Only)
+To host the frontend Streamlit UI for free on Streamlit Cloud:
+1. Push your repository to GitHub.
+2. Go to [share.streamlit.io](https://share.streamlit.io) and select `ui/app.py` as the entry point.
+3. In settings, configure environment variables (e.g. `FLASK_DEBUG=false`, `MODEL_PATH`, etc.) as Secrets.
+
+---
+
+>>>>>>> 71dffea (Fix deployment issues)
 ## 🙏 Acknowledgments
 
 - Food-101 Dataset: https://www.kaggle.com/dansbecker/food-101

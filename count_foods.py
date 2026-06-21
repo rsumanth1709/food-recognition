@@ -10,4 +10,3 @@ print(f"Total foods in database: {len(matches)}")
 print(f"\nFirst 10 foods: {matches[:10]}")
 print(f"Last 10 foods: {matches[-10:]}")
 
-# Made with Bob

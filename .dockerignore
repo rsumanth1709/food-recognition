@@ -1,4 +1,5 @@
-# Python
+.git/
+.gitignore
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,38 +20,25 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
 venv/
 ENV/
 env/
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Project specific
-data/foodtracker.db
+data/*.db
 data/users.json
+ui/data/*.db
+uploads/
 temp_image.jpg
 *.log
-
-# Model files (if large)
-models/*.h5
-models/*.keras
-
-# Jupyter Notebook
 .ipynb_checkpoints/
-
-# Test files
-test_*.py
+notebooks/
+tests/
 demo_*.py
 count_*.py
 expand_*.py
@@ -58,3 +46,10 @@ fix_*.py
 final_*.py
 quick_*.py
 rebuild_*.py
+test_database.py
+train.py
+initialize.py
+requirements-dev.txt
+docker-compose*.yml
+Dockerfile
+.dockerignore

@@ -1,8 +1,13 @@
 """
 Configuration settings for the Food Recognition and Calorie Tracking System
+All values can be overridden via environment variables (see .env.example)
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file in development (no-op in production if file is absent)
+load_dotenv()
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent
@@ -46,10 +51,11 @@ TRAINING_CONFIG = {
 }
 
 # Inference configurations
+_model_path_env = os.environ.get('MODEL_PATH', '')
 INFERENCE_CONFIG = {
-    'confidence_threshold': 0.3,
-    'top_k': 5,  # Return top 5 predictions
-    'model_path': MODELS_DIR / 'food_recognition_final.h5',
+    'confidence_threshold': float(os.environ.get('CONFIDENCE_THRESHOLD', 0.3)),
+    'top_k': int(os.environ.get('TOP_K_PREDICTIONS', 5)),
+    'model_path': Path(_model_path_env) if _model_path_env else MODELS_DIR / 'food_recognition_final.h5',
 }
 
 # Calorie database settings
@@ -60,10 +66,18 @@ CALORIE_DB_CONFIG = {
 
 # API configurations
 API_CONFIG = {
-    'host': '0.0.0.0',
-    'port': 5000,
-    'debug': True,
+    'host': os.environ.get('API_HOST', '0.0.0.0'),
+    'port': int(os.environ.get('API_PORT', 5000)),
+    'debug': os.environ.get('FLASK_DEBUG', 'false').lower() == 'true',
+    'secret_key': os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production'),
 }
+
+# Database path (env-var driven for container deployments)
+_db_path_env = os.environ.get('DATABASE_PATH', '')
+DATABASE_PATH = Path(_db_path_env) if _db_path_env else DATA_DIR / 'foodtracker.db'
+
+# Upload folder
+UPLOAD_FOLDER = Path(os.environ.get('UPLOAD_FOLDER', 'uploads'))
 
 # Streamlit configurations
 STREAMLIT_CONFIG = {
@@ -73,8 +87,9 @@ STREAMLIT_CONFIG = {
 }
 
 # Logging
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 LOGGING_CONFIG = {
-    'level': 'INFO',
+    'level': LOG_LEVEL,
     'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 }
 

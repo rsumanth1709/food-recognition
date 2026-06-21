@@ -22,5 +22,3 @@ for food in test_foods:
     print(f"  {food}: {info.get('calories', 'N/A')} calories")
 
 print("\nDatabase expansion successful!")
-
-# Made with Bob

@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from src.inference import FoodRecognitionInference, MealTracker
 from src.calorie_database import CalorieDatabase
-from config import API_CONFIG
+from config import API_CONFIG, UPLOAD_FOLDER
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+app.config['SECRET_KEY'] = API_CONFIG['secret_key']
+
 # Configuration
-UPLOAD_FOLDER = Path('uploads')
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
 
@@ -76,16 +77,17 @@ def predict():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type. Allowed: ' + ', '.join(ALLOWED_EXTENSIONS)}), 400
         
-        # Save uploaded file
+        # Save uploaded file safely
         filename = secure_filename(file.filename)
-        filepath = app.config['UPLOAD_FOLDER'] + '/' + filename
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
         # Make prediction
         results = inference_engine.predict_single(filepath, top_k=5)
         
         # Clean up uploaded file
-        os.remove(filepath)
+        if os.path.exists(filepath):
+            os.remove(filepath)
         
         if results:
             return jsonify(results)
@@ -119,7 +121,7 @@ def predict_batch():
         for file in files:
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
-                filepath = app.config['UPLOAD_FOLDER'] + '/' + filename
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
                 file_paths.append(filepath)
         
@@ -131,7 +133,8 @@ def predict_batch():
         
         # Clean up
         for filepath in file_paths:
-            os.remove(filepath)
+            if os.path.exists(filepath):
+                os.remove(filepath)
         
         return jsonify({'predictions': results})
     
@@ -160,14 +163,15 @@ def calorie_estimate():
         
         # Save file
         filename = secure_filename(file.filename)
-        filepath = app.config['UPLOAD_FOLDER'] + '/' + filename
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
         # Estimate calories
         result = inference_engine.estimate_meal_calories(filepath, quantity_percentage)
         
         # Clean up
-        os.remove(filepath)
+        if os.path.exists(filepath):
+            os.remove(filepath)
         
         if result:
             return jsonify(result)
@@ -185,7 +189,7 @@ def add_meal():
     Add a meal to daily tracker.
     
     Request: POST with food_name, calories, nutrition, meal_type
-    Response: JSON with updated daily summary
+    Response: JSON with daily summary
     """
     try:
         data = request.get_json()

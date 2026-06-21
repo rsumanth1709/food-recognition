@@ -1,9 +1,11 @@
 """
-Database module for user authentication and meal tracking
-Uses SQLite for persistent storage
+Database module for user authentication and meal tracking.
+Uses SQLite for persistent storage.
+Passwords are hashed with PBKDF2-HMAC-SHA256 (production-grade).
 """
 import sqlite3
 import hashlib
+import os
 import json
 from pathlib import Path
 from datetime import datetime
@@ -11,24 +13,61 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Import the central DB path from config (env-var-driven)
+# ---------------------------------------------------------------------------
+try:
+    from config import DATABASE_PATH
+except ImportError:
+    DATABASE_PATH = Path("data/foodtracker.db")
+
+
+def _hash_password(password: str) -> str:
+    """
+    Hash a password using PBKDF2-HMAC-SHA256 with a random salt.
+    Format: 'pbkdf2$<salt_hex>$<hash_hex>'
+    """
+    salt = os.urandom(32)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260_000)
+    return f"pbkdf2${salt.hex()}${key.hex()}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    """
+    Verify a password against its stored PBKDF2 hash.
+    Also accepts legacy SHA-256 hashes (plain hex, no prefix) for backwards compat.
+    """
+    if stored_hash.startswith('pbkdf2$'):
+        _, salt_hex, key_hex = stored_hash.split('$')
+        salt = bytes.fromhex(salt_hex)
+        key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260_000)
+        return key.hex() == key_hex
+    else:
+        # Legacy SHA-256 path (migration: next login will re-hash with PBKDF2)
+        return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+
+
 class FoodTrackerDB:
     """Database handler for Food Tracker application"""
-    
-    def __init__(self, db_path="data/foodtracker.db"):
+
+    def __init__(self, db_path=None):
         """Initialize database connection"""
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) if db_path else DATABASE_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_database()
-    
+
     def get_connection(self):
         """Get database connection"""
-        return sqlite3.connect(str(self.db_path))
-    
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL")   # Better concurrent read performance
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
     def init_database(self):
         """Initialize database tables"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         # Users table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -41,7 +80,7 @@ class FoodTrackerDB:
                 last_login TIMESTAMP
             )
         ''')
-        
+
         # Meals table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS meals (
@@ -59,7 +98,7 @@ class FoodTrackerDB:
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
-        
+
         # User preferences table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_preferences (
@@ -71,41 +110,38 @@ class FoodTrackerDB:
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
-        
+
         conn.commit()
-        
-        # Create default admin user if not exists
-        cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
-        if cursor.fetchone()[0] == 0:
-            self.create_user('admin', 'admin123', 'Administrator', 'admin@foodtracker.com')
-            logger.info("Default admin user created")
-        
+
+        # Only seed default admin in non-production environments
+        if os.environ.get('SEED_ADMIN', 'true').lower() == 'true':
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
+            if cursor.fetchone()[0] == 0:
+                self.create_user('admin', 'admin123', 'Administrator', 'admin@foodtracker.com')
+                logger.info("Default admin user created (set SEED_ADMIN=false to disable)")
+
         conn.close()
-    
-    def hash_password(self, password):
-        """Hash password using SHA256"""
-        return hashlib.sha256(password.encode()).hexdigest()
-    
+
     def create_user(self, username, password, name, email):
-        """Create new user"""
+        """Create new user with PBKDF2-hashed password"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
-            password_hash = self.hash_password(password)
+
+            password_hash = _hash_password(password)
             cursor.execute('''
                 INSERT INTO users (username, password_hash, name, email)
                 VALUES (?, ?, ?, ?)
             ''', (username, password_hash, name, email))
-            
+
             user_id = cursor.lastrowid
-            
+
             # Create default preferences
             cursor.execute('''
                 INSERT INTO user_preferences (user_id)
                 VALUES (?)
             ''', (user_id,))
-            
+
             conn.commit()
             conn.close()
             return True, "User created successfully"
@@ -114,55 +150,65 @@ class FoodTrackerDB:
         except Exception as e:
             logger.error(f"Error creating user: {e}")
             return False, str(e)
-    
+
     def authenticate_user(self, username, password):
-        """Authenticate user"""
+        """
+        Authenticate user. Migrates legacy SHA-256 hashes to PBKDF2 on successful login.
+        """
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
-            password_hash = self.hash_password(password)
+
             cursor.execute('''
-                SELECT id, username, name, email
+                SELECT id, username, name, email, password_hash
                 FROM users
-                WHERE username = ? AND password_hash = ?
-            ''', (username, password_hash))
-            
+                WHERE username = ?
+            ''', (username,))
+
             user = cursor.fetchone()
-            
-            if user:
+
+            if user and _verify_password(password, user[4]):
+                user_id = user[0]
+
+                # Migrate legacy hash to PBKDF2 transparently
+                if not user[4].startswith('pbkdf2$'):
+                    new_hash = _hash_password(password)
+                    cursor.execute(
+                        'UPDATE users SET password_hash = ? WHERE id = ?',
+                        (new_hash, user_id)
+                    )
+                    logger.info(f"Migrated password hash for user {user_id} to PBKDF2")
+
                 # Update last login
                 cursor.execute('''
-                    UPDATE users
-                    SET last_login = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                ''', (user[0],))
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+                ''', (user_id,))
                 conn.commit()
-                
+
                 user_data = {
                     'id': user[0],
                     'username': user[1],
                     'name': user[2],
-                    'email': user[3]
+                    'email': user[3],
                 }
                 conn.close()
                 return True, user_data
-            
+
             conn.close()
             return False, None
         except Exception as e:
             logger.error(f"Error authenticating user: {e}")
             return False, None
-    
+
     def add_meal(self, user_id, food_name, calories, nutrition, meal_type='other', meal_date=None):
         """Add meal to database"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             if meal_date is None:
                 meal_date = datetime.now().date()
-            
+
             cursor.execute('''
                 INSERT INTO meals (user_id, food_name, calories, protein, fat, carbs, fiber, meal_type, meal_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -174,30 +220,30 @@ class FoodTrackerDB:
                 nutrition.get('fiber', 0),
                 meal_type, meal_date
             ))
-            
+
             conn.commit()
             conn.close()
             return True
         except Exception as e:
             logger.error(f"Error adding meal: {e}")
             return False
-    
+
     def get_daily_meals(self, user_id, date=None):
         """Get all meals for a specific date"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             if date is None:
                 date = datetime.now().date()
-            
+
             cursor.execute('''
                 SELECT id, food_name, calories, protein, fat, carbs, fiber, meal_type, meal_time
                 FROM meals
                 WHERE user_id = ? AND meal_date = ?
                 ORDER BY meal_time DESC
             ''', (user_id, date))
-            
+
             meals = []
             for row in cursor.fetchall():
                 meals.append({
@@ -211,24 +257,24 @@ class FoodTrackerDB:
                     'meal_type': row[7],
                     'meal_time': row[8]
                 })
-            
+
             conn.close()
             return meals
         except Exception as e:
             logger.error(f"Error getting daily meals: {e}")
             return []
-    
+
     def get_daily_summary(self, user_id, date=None):
         """Get daily nutrition summary"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             if date is None:
                 date = datetime.now().date()
-            
+
             cursor.execute('''
-                SELECT 
+                SELECT
                     COUNT(*) as meal_count,
                     SUM(calories) as total_calories,
                     SUM(protein) as total_protein,
@@ -238,9 +284,9 @@ class FoodTrackerDB:
                 FROM meals
                 WHERE user_id = ? AND meal_date = ?
             ''', (user_id, date))
-            
+
             row = cursor.fetchone()
-            
+
             summary = {
                 'total_meals': row[0] or 0,
                 'total_calories': row[1] or 0,
@@ -251,7 +297,7 @@ class FoodTrackerDB:
                     'fiber': row[5] or 0
                 }
             }
-            
+
             conn.close()
             return summary
         except Exception as e:
@@ -261,18 +307,18 @@ class FoodTrackerDB:
                 'total_calories': 0,
                 'nutrition': {'protein': 0, 'fat': 0, 'carbs': 0, 'fiber': 0}
             }
-    
+
     def get_meal_breakdown(self, user_id, date=None):
         """Get meal breakdown by type"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             if date is None:
                 date = datetime.now().date()
-            
+
             cursor.execute('''
-                SELECT 
+                SELECT
                     meal_type,
                     COUNT(*) as count,
                     SUM(calories) as total_calories
@@ -280,73 +326,73 @@ class FoodTrackerDB:
                 WHERE user_id = ? AND meal_date = ?
                 GROUP BY meal_type
             ''', (user_id, date))
-            
+
             breakdown = {}
             for row in cursor.fetchall():
                 breakdown[row[0]] = {
                     'count': row[1],
                     'calories': row[2]
                 }
-            
+
             conn.close()
             return breakdown
         except Exception as e:
             logger.error(f"Error getting meal breakdown: {e}")
             return {}
-    
+
     def delete_meal(self, meal_id, user_id):
         """Delete a meal"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 DELETE FROM meals
                 WHERE id = ? AND user_id = ?
             ''', (meal_id, user_id))
-            
+
             conn.commit()
             conn.close()
             return True
         except Exception as e:
             logger.error(f"Error deleting meal: {e}")
             return False
-    
+
     def reset_daily_meals(self, user_id, date=None):
         """Reset all meals for a specific date"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             if date is None:
                 date = datetime.now().date()
-            
+
             cursor.execute('''
                 DELETE FROM meals
                 WHERE user_id = ? AND meal_date = ?
             ''', (user_id, date))
-            
+
             conn.commit()
             conn.close()
             return True
         except Exception as e:
             logger.error(f"Error resetting daily meals: {e}")
             return False
-    
+
     def get_user_preferences(self, user_id):
         """Get user preferences"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT daily_calorie_goal, daily_protein_goal, daily_fat_goal, daily_carbs_goal
                 FROM user_preferences
                 WHERE user_id = ?
             ''', (user_id,))
-            
+
             row = cursor.fetchone()
-            
+
             if row:
                 prefs = {
                     'daily_calorie_goal': row[0],
@@ -361,7 +407,7 @@ class FoodTrackerDB:
                     'daily_fat_goal': 65,
                     'daily_carbs_goal': 300
                 }
-            
+
             conn.close()
             return prefs
         except Exception as e:
@@ -372,13 +418,13 @@ class FoodTrackerDB:
                 'daily_fat_goal': 65,
                 'daily_carbs_goal': 300
             }
-    
+
     def get_meal_history(self, user_id, days=7):
         """Get meal history for the last N days"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT
                     id, food_name, calories, protein, fat, carbs, fiber,
@@ -388,7 +434,7 @@ class FoodTrackerDB:
                 AND meal_date >= date('now', '-' || ? || ' days')
                 ORDER BY meal_date DESC, meal_time DESC
             ''', (user_id, days))
-            
+
             meals = []
             for row in cursor.fetchall():
                 meals.append({
@@ -403,19 +449,19 @@ class FoodTrackerDB:
                     'meal_date': row[8],
                     'meal_time': row[9]
                 })
-            
+
             conn.close()
             return meals
         except Exception as e:
             logger.error(f"Error getting meal history: {e}")
             return []
-    
+
     def get_date_range_summary(self, user_id, start_date, end_date):
         """Get summary for a date range"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT
                     meal_date,
@@ -429,7 +475,7 @@ class FoodTrackerDB:
                 GROUP BY meal_date
                 ORDER BY meal_date DESC
             ''', (user_id, start_date, end_date))
-            
+
             daily_summaries = []
             for row in cursor.fetchall():
                 daily_summaries.append({
@@ -440,11 +486,9 @@ class FoodTrackerDB:
                     'total_fat': row[4] or 0,
                     'total_carbs': row[5] or 0
                 })
-            
+
             conn.close()
             return daily_summaries
         except Exception as e:
             logger.error(f"Error getting date range summary: {e}")
             return []
-
-# Made with Bob

@@ -211,5 +211,3 @@ with open('src/calorie_database.py', 'w', encoding='utf-8') as f:
 new_count = len(re.findall(r"'[^']+'\s*:\s*\{", new_content))
 print(f"Updated database now has: {new_count} foods")
 print(f"Added {new_count - current_count} new foods")
-
-# Made with Bob

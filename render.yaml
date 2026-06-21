@@ -1,0 +1,36 @@
+services:
+  # Flask API Service
+  - type: web
+    name: foodtracker-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT src.api:app --workers 2
+    envVars:
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: "/var/data/foodtracker.db"
+      - key: UPLOAD_FOLDER
+        value: "/var/data/uploads"
+    disk:
+      name: foodtracker-storage
+      mountPath: /var/data
+      sizeGB: 10
+
+  # Streamlit Frontend Service
+  - type: web
+    name: foodtracker-ui
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run ui/app.py --server.port $PORT
+    envVars:
+      - key: DATABASE_PATH
+        value: "/var/data/foodtracker.db"
+      - key: UPLOAD_FOLDER
+        value: "/var/data/uploads"
+    disk:
+      name: foodtracker-storage
+      mountPath: /var/data
+      sizeGB: 10

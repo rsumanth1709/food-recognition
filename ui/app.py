@@ -24,8 +24,6 @@ import importlib
 # Import local modules
 from src.inference import FoodRecognitionInference
 from src.calorie_database import CalorieDatabase
-import src.database
-importlib.reload(src.database)  # Force reload to get latest methods
 from src.database import FoodTrackerDB
 from config import STREAMLIT_CONFIG
 
@@ -306,54 +304,60 @@ elif selected == "Food Recognition":
         with col2:
             st.subheader("Analysis")
             
-            # Save temp file and predict
-            temp_path = Path("temp_image.jpg")
-            image.save(temp_path)
+            # Save temp file using tempfile module safely
+            import tempfile
+            import os
             
-            with st.spinner("🤖 Analyzing image..."):
-                results = st.session_state.inference_engine.predict_single(temp_path, top_k=5)
-            
-            if results and results['predictions']:
-                # Display predictions
-                st.write("**Top Predictions:**")
+            fd, temp_file_path = tempfile.mkstemp(suffix=".jpg")
+            try:
+                os.close(fd)
+                image.save(temp_file_path)
                 
-                for i, pred in enumerate(results['predictions'], 1):
-                    with st.expander(
-                        f"{i}. {pred['food_name'].title()} ({pred['confidence']*100:.1f}%)",
-                        expanded=(i == 1)
-                    ):
-                        col_a, col_b = st.columns(2)
-                        
-                        with col_a:
-                            st.metric("Calories", f"{pred['calories']} (per 100g)")
-                            st.metric("Protein", f"{pred['protein']}g")
-                        
-                        with col_b:
-                            st.metric("Fat", f"{pred['fat']}g")
-                            st.metric("Carbs", f"{pred['carbs']}g")
-                        
-                        st.metric("Fiber", f"{pred['fiber']}g")
-                        
-                        # Add to tracker button
-                        if st.button(
-                            f"Add '{pred['food_name']}' to Today",
-                            key=f"add_{i}"
+                with st.spinner("🤖 Analyzing image..."):
+                    results = st.session_state.inference_engine.predict_single(Path(temp_file_path), top_k=5)
+                
+                if results and results['predictions']:
+                    # Display predictions
+                    st.write("**Top Predictions:**")
+                    
+                    for i, pred in enumerate(results['predictions'], 1):
+                        with st.expander(
+                            f"{i}. {pred['food_name'].title()} ({pred['confidence']*100:.1f}%)",
+                            expanded=(i == 1)
                         ):
-                            db.add_meal(
-                                st.session_state.user_id,
-                                pred['food_name'],
-                                pred['calories'] * quantity_percentage,
-                                {
-                                    'protein': pred['protein'] * quantity_percentage,
-                                    'fat': pred['fat'] * quantity_percentage,
-                                    'carbs': pred['carbs'] * quantity_percentage,
-                                    'fiber': pred['fiber'] * quantity_percentage,
-                                }
-                            )
-                            st.success(f"✅ Added {pred['food_name']} to today's meals!")
-            
-            # Clean up
-            temp_path.unlink()
+                            col_a, col_b = st.columns(2)
+                            
+                            with col_a:
+                                st.metric("Calories", f"{pred['calories']} (per 100g)")
+                                st.metric("Protein", f"{pred['protein']}g")
+                            
+                            with col_b:
+                                st.metric("Fat", f"{pred['fat']}g")
+                                st.metric("Carbs", f"{pred['carbs']}g")
+                            
+                            st.metric("Fiber", f"{pred['fiber']}g")
+                            
+                            # Add to tracker button
+                            if st.button(
+                                f"Add '{pred['food_name']}' to Today",
+                                key=f"add_{i}"
+                            ):
+                                db.add_meal(
+                                    st.session_state.user_id,
+                                    pred['food_name'],
+                                    pred['calories'] * quantity_percentage,
+                                    {
+                                        'protein': pred['protein'] * quantity_percentage,
+                                        'fat': pred['fat'] * quantity_percentage,
+                                        'carbs': pred['carbs'] * quantity_percentage,
+                                        'fiber': pred['fiber'] * quantity_percentage,
+                                    }
+                                )
+                                st.success(f"✅ Added {pred['food_name']} to today's meals!")
+            finally:
+                # Clean up temp file safely
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
 
 
 # Add Meal Page
