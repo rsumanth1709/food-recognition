@@ -276,17 +276,6 @@ Contributions are welcome! Please:
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
-
-This project is open source and available under the MIT License.
-
-## 📧 Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Contact: support@foodtracker.ai
-- Documentation: [Full Documentation](docs/)
-
 ## 🙏 Acknowledgments
 
 - Food-101 Dataset: https://www.kaggle.com/dansbecker/food-101
