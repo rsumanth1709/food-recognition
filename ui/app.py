@@ -273,6 +273,10 @@ elif selected == "Food Recognition":
     
     st.write("Upload an image of your food to identify it and get calorie information.")
     
+    # Check if TensorFlow is available for image recognition
+    if not getattr(st.session_state.inference_engine, 'model', None):
+        st.warning("⚠️ **Image recognition is currently disabled.** TensorFlow is not available or the trained model model file could not be loaded in this environment (e.g. Python 3.14+ on Streamlit Cloud). You can still search the database or log meals manually!")
+    
     # File uploader
     uploaded_file = st.file_uploader(
         "Choose an image...",
